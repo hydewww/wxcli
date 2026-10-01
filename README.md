@@ -342,9 +342,27 @@ daemon 首次解密后将数据库和 mtime 持久化到 `~/.wx-cli/cache/`。�
 
 ## 原理
 
-微信 4.x 使用 SQLCipher 4 加密本地数据库（AES-256-CBC + HMAC-SHA512，PBKDF2 256,000 次迭代）。WCDB 在进程内存中缓存派生后的 raw key，格式为 `x'<64hex_key><32hex_salt>'`。
+微信 4.x 使用 SQLCipher 4 加密本地数据库（AES-256-CBC + HMAC-SHA512，PBKDF2 256,000 次迭代）。
+
+### WeChat 4.0.x (Legacy)
+
+WCDB 在进程内存中缓存派生后的 raw key，格式为 `x'<64hex_key><32hex_salt>'`。
 
 wx-cli 通过 macOS Mach VM API（`mach_vm_region` + `mach_vm_read`）、Linux `/proc/<pid>/mem` 或 Windows `VirtualQueryEx` + `ReadProcessMemory`（需要 `PROCESS_VM_READ | PROCESS_QUERY_INFORMATION` 权限）扫描微信进程内存，匹配该模式提取密钥，daemon 按需解密并缓存。
+
+### WeChat 4.1+ (Linux)
+
+**Breaking change**: WeChat Linux 4.1+ no longer caches raw keys in the `x'<hex>'` format. Memory scan returns zero candidates.
+
+**New approach**: Keys are derived at login via `PBKDF2-HMAC-SHA512(passphrase, db_salt, 256000)` from a 32-byte passphrase. To initialize wx-cli on 4.1+:
+
+1. Capture the passphrase at login using GDB (see [docs/linux-4.1-init-guide.md](docs/linux-4.1-init-guide.md))
+2. Derive keys using: `export WX_PASSPHRASE=<64_hex_chars>` then `sudo -E wx init`
+3. Or use external tools like [TANGandXUE/wcdb-key-tool](https://github.com/TANGandXUE/wcdb-key-tool)
+
+**Safety**: `wx init --force` on 4.1+ will **not** silently overwrite existing keys if memory scan returns empty. Backup `~/.wx-cli/all_keys.json` before re-initializing.
+
+**Note**: Windows/macOS 4.1+ key extraction is not yet documented. Contributions welcome.
 
 ---
 

@@ -44,9 +44,68 @@ pub fn cmd_init(force: bool) -> Result<()> {
     ))?;
     println!("找到数据目录: {}", db_dir.display());
 
-    // Step 2: 扫描密钥（需要 root/sudo）
-    println!("扫描加密密钥（需要 root 权限）...");
-    let entries = scanner::scan_keys(&db_dir)?;
+    // Step 2: Scan keys (requires root/sudo)
+    println!("Scanning encryption keys (requires root privileges)...");
+    let entries = match scanner::scan_keys(&db_dir) {
+        Ok(e) => e,
+        Err(err) => {
+            // Check if existing keys file has content - don't overwrite on scan failure
+            let keys_file_path = config_path.parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join("all_keys.json");
+            
+            if keys_file_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&keys_file_path) {
+                    if let Ok(existing) = serde_json::from_str::<serde_json::Value>(&content) {
+                        if let Some(obj) = existing.as_object() {
+                            if !obj.is_empty() {
+                                eprintln!("\nError: Key scan failed, but detected non-empty existing keys file.");
+                                eprintln!("To avoid overwriting existing keys, init has been aborted.");
+                                eprintln!("\nExisting keys file: {} ({} keys)", 
+                                    keys_file_path.display(), obj.len());
+                                eprintln!("\nIf you want to re-scan and overwrite, first backup existing keys, then:");
+                                eprintln!("  rm {}", keys_file_path.display());
+                                eprintln!("  wx init --force");
+                                eprintln!("\nOriginal error: {}", err);
+                                return Err(err);
+                            }
+                        }
+                    }
+                }
+            }
+            return Err(err);
+        }
+    };
+    
+    if entries.is_empty() {
+        eprintln!("\nWarning: Scan completed but found no keys.");
+        
+        // Check if we're about to overwrite non-empty keys
+        let keys_file_path = config_path.parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join("all_keys.json");
+        
+        if keys_file_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&keys_file_path) {
+                if let Ok(existing) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(obj) = existing.as_object() {
+                        if !obj.is_empty() {
+                            eprintln!("Detected existing keys file with {} keys.", obj.len());
+                            if !force {
+                                eprintln!("\nTo avoid overwriting existing keys, init has been aborted.");
+                                eprintln!("If you want to overwrite with empty scan result, use: wx init --force");
+                                anyhow::bail!("Refusing to overwrite existing keys with empty scan result (use --force to override)");
+                            } else {
+                                eprintln!("Warning: Using --force, will overwrite existing {} keys with empty result!", obj.len());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        eprintln!("\nThis may be WeChat 4.1+ version. Please refer to the documentation for passphrase-based initialization.");
+    }
 
     // === 权限边界 ===
     // 扫描完成后立即 drop 到调用用户身份，后续文件写入都是用户属主。

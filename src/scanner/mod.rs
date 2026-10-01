@@ -9,6 +9,9 @@ mod linux;
 #[cfg(target_os = "windows")]
 mod windows;
 
+#[cfg(target_os = "linux")]
+pub mod passphrase_capture;
+
 /// 扫描到的一条密钥记录
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyEntry {

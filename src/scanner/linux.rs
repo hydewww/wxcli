@@ -89,6 +89,30 @@ pub fn scan_keys(db_dir: &Path) -> Result<Vec<KeyEntry>> {
     }
     eprintln!("找到 {} 个候选密钥", raw_keys.len());
 
+    // If memory scan found zero candidates, this is likely WeChat 4.1+
+    if raw_keys.is_empty() && !db_salts.is_empty() {
+        eprintln!("\nWarning: Memory scan found no keys.");
+        eprintln!("This typically happens with WeChat 4.1+ versions.");
+        eprintln!("\nWeChat 4.1+ derives keys from a passphrase and no longer caches raw key strings in memory.");
+        eprintln!("You need to capture the passphrase at login via GDB, then derive per-DB keys using PBKDF2.");
+        eprintln!("\nFor passphrase-based initialization, see:");
+        eprintln!("  https://github.com/hydewww/wxcli/blob/main/docs/linux-4.1-init-guide.md");
+        eprintln!("\nAlternatively, if you already have the passphrase, set the environment variable:");
+        eprintln!("  export WX_PASSPHRASE=<64_hex_chars>");
+        eprintln!("  then re-run: wx init");
+        
+        // Check if user provided passphrase via environment variable
+        if let Ok(passphrase_hex) = std::env::var("WX_PASSPHRASE") {
+            eprintln!("\nDetected WX_PASSPHRASE environment variable, deriving keys from passphrase...");
+            return super::passphrase_capture::derive_keys_from_passphrase(&passphrase_hex, db_dir);
+        }
+        
+        anyhow::bail!(
+            "Memory scan found no keys (WeChat 4.1+).\n\
+             Please use passphrase-based initialization (see docs) or set WX_PASSPHRASE environment variable."
+        );
+    }
+
     let mut entries = Vec::new();
     for (key_hex, salt_hex) in &raw_keys {
         for (db_salt, db_name) in &db_salts {

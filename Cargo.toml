@@ -15,7 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "~4.5", features = ["derive"] }
 
 # 异步
 tokio = { version = "1", features = ["full"] }
